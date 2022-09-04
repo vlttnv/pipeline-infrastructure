@@ -1,0 +1,146 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+        "PieplineNameParameter": {
+            "Type": "String",
+            "Description": "Enter a name for the pipeline"
+        },
+        "RepoNameParameter": {
+            "Type": "String",
+            "Description": "Enter a name for the ECR repository"
+        },
+        "GitHubRepoURL": {
+            "Type": "String",
+            "Description": "The GitHub URL of the repository containing your source code",
+            "Default": "https://github.com/vlttnv/pipeline-api-app.git"
+        }
+    },
+    "Resources": {
+        "CodeBuildProject": {
+            "Type": "AWS::CodeBuild::Project",
+            "Properties": {
+                "Artifacts": {
+                    "Type": "NO_ARTIFACTS"
+                },
+                "Name": {"Ref": "PieplineNameParameter"},
+                "ServiceRole": {
+                    "Fn::GetAtt": [
+                        "CodeBuildRole",
+                        "Arn"
+                    ]
+                },
+                "Source": {
+                    "Location": {"Ref": "GitHubRepoURL"},
+                    "Type": "GITHUB"
+                },
+                "Environment": {
+                    "Type": "LINUX_CONTAINER",
+                    "ComputeType": "BUILD_GENERAL1_SMALL",
+                    "Image": "aws/codebuild/standard:6.0",
+                    "PrivilegedMode": true,
+                    "EnvironmentVariables": [
+                        {
+                            "Name": "IMAGE_REPO_NAME",
+                            "Type": "PLAINTEXT",
+                            "Value": {"Ref": "ECRRepo"}
+                        },
+                        {
+                            "Name": "AWS_ACCOUNT_ID",
+                            "Type": "PLAINTEXT",
+                            "Value": { "Fn::Sub": "${AWS::AccountId}" }
+                        }
+                    ]
+                },
+                "Tags": []
+            }
+        },
+        "CodeBuildRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "codebuild.amazonaws.com"
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyName": "ecr-permissions",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "ecr:BatchCheckLayerAvailability",
+                                        "ecr:CompleteLayerUpload",
+                                        "ecr:InitiateLayerUpload",
+                                        "ecr:PutImage",
+                                        "ecr:UploadLayerPart"
+                                    ],
+                                    "Resource": {
+                                        "Fn::GetAtt": [
+                                            "ECRRepo",
+                                            "Arn"
+                                        ]
+                                    },
+                                    "Effect": "Allow"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "ecr:GetAuthorizationToken",
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "log-permissions",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${PieplineNameParameter}" },
+                                        { "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${PieplineNameParameter}:*" }
+                                    ],
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "codebuild:CreateReportGroup",
+                                        "codebuild:CreateReport",
+                                        "codebuild:UpdateReport",
+                                        "codebuild:BatchPutTestCases",
+                                        "codebuild:BatchPutCodeCoverages"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:report-group:report-group/${PieplineNameParameter}-*" }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "RoleName": "code-build-app-api-service-role"
+            }
+        },
+        "ECRRepo": {
+            "Type": "AWS::ECR::Repository",
+            "Properties": {
+                "RepositoryName": {"Ref": "RepoNameParameter"}
+            }
+        }
+    }
+}
